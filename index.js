@@ -7,8 +7,26 @@ app.use(express.urlencoded({ extended: false }));
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// ============================================================
+// 🔑 YOUR DETAILS — update these in Render Environment Variables
+// OWNER_WHATSAPP = your personal WhatsApp number to receive reports
+// Format: whatsapp:+971XXXXXXXXX (your UAE number)
+// TWILIO_ACCOUNT_SID = from your Twilio dashboard
+// TWILIO_AUTH_TOKEN = from your Twilio dashboard
+// TWILIO_WHATSAPP_NUMBER = your Twilio sandbox number e.g. whatsapp:+14155238886
+// ============================================================
+const OWNER_WHATSAPP = process.env.OWNER_WHATSAPP;
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
+const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER;
+
+const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+
 // Stores conversation history per phone number
 const conversations = {};
+
+// Stores message logs per phone number for reporting
+const messageLogs = {};
 
 const SYSTEM_PROMPT = `You are Zara, the ultimate insider and hype girl for Antim Saturday at Moksha, Dubai. You are not a robot or an information desk — you are a fun, warm, bubbly friend who is OBSESSED with this event and cannot wait for tonight. You genuinely care about the guests having an amazing time.
 
@@ -66,6 +84,59 @@ Conversation rules:
 - Never make up details not listed above
 - Always stay in character as Zara — never break character`;
 
+
+// ============================================================
+// Send a WhatsApp report to the owner
+// ============================================================
+async function sendOwnerReport(guestNumber, guestMessage, zaraReply) {
+  if (!OWNER_WHATSAPP || !TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
+    console.log("Owner reporting not configured — skipping");
+    return;
+  }
+
+  // Format the guest number cleanly
+  const cleanNumber = guestNumber.replace("whatsapp:", "");
+
+  // Get current time in Dubai timezone
+  const dubaiTime = new Date().toLocaleString("en-GB", {
+    timeZone: "Asia/Dubai",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true
+  });
+
+  const report =
+`📊 *Zara Chat Report*
+─────────────────
+👤 *Guest:* ${cleanNumber}
+🕐 *Time:* ${dubaiTime}
+
+💬 *Guest said:*
+${guestMessage}
+
+🤖 *Zara replied:*
+${zaraReply}
+─────────────────`;
+
+  try {
+    await twilioClient.messages.create({
+      from: TWILIO_WHATSAPP_NUMBER,
+      to: OWNER_WHATSAPP,
+      body: report
+    });
+    console.log("Owner report sent successfully");
+  } catch (err) {
+    console.error("Failed to send owner report:", err.message);
+  }
+}
+
+
+// ============================================================
+// Main WhatsApp webhook — receives guest messages
+// ============================================================
 app.post("/whatsapp", async (req, res) => {
   const userMessage = req.body.Body;
   const from = req.body.From;
@@ -92,10 +163,13 @@ app.post("/whatsapp", async (req, res) => {
     const reply = response.content[0].text;
     conversations[from].push({ role: "assistant", content: reply });
 
-    // Send reply back via Twilio
+    // Send reply to guest
     const twiml = new twilio.twiml.MessagingResponse();
     twiml.message(reply);
     res.type("text/xml").send(twiml.toString());
+
+    // Send report to owner (runs in background, doesn't delay guest reply)
+    sendOwnerReport(from, userMessage, reply);
 
   } catch (err) {
     console.error("Error:", err);
@@ -104,6 +178,7 @@ app.post("/whatsapp", async (req, res) => {
     res.type("text/xml").send(twiml.toString());
   }
 });
+
 
 // Health check route
 app.get("/", (req, res) => res.send("Zara bot is running!"));
