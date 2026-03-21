@@ -1,0 +1,14 @@
+{
+  "name": "antim-saturday-zara-bot",
+  "version": "1.0.0",
+  "description": "Zara — AI event concierge for Antim Saturday at Moksha",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "twilio": "^4.19.0",
+    "@anthropic-ai/sdk": "^0.20.0"
+  }
+}
